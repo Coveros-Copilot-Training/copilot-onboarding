@@ -19,6 +19,29 @@ jobs:
         with:
           issue_id: ${{ github.event.issue.number }}
 
+      - name: Immediately redact access code from issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get the current issue body
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            // Redact the access code from the issue body
+            let body = issue.data.body;
+            body = body.replace(/### Access Code\n\n.*/gm, '### Access Code\n\n[------]');
+
+            // Update the issue to remove the access code
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
       - name: Rate limit check
         id: rate_limit
         uses: actions/github-script@v7
@@ -31,7 +54,7 @@ jobs:
               creator: creator,
               state: 'all',
               since: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-              labels: 'Onboarding'
+              labels: 'onboarding'
             });
             // Allow max 5 attempts per 24 hours
             if (recentIssues.data.length > 5) {
@@ -59,10 +82,8 @@ jobs:
         run: |
           if [ "$ACCESS_CODE" != "$SUBMITTED_CODE" ]; then
             echo "valid=false" >> $GITHUB_OUTPUT
-            echo "Invalid access code provided"
           else
             echo "valid=true" >> $GITHUB_OUTPUT
-            echo "Access code validated"
           fi
 
       - name: Add user to organization
@@ -79,57 +100,41 @@ jobs:
                 role: 'member'
               });
               
-              // Comment on issue
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: `✅ @${context.payload.issue.user.login} has been successfully added to the organization!\n\nYou should receive an invitation email shortly. Please accept it to complete the onboarding process.`
-              });
-              
-              // Close issue
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                state: 'closed'
-              });
-              
-              // Add success label
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                labels: ['onboarding-complete']
-              });
-              
             } catch (error) {
-              throw new Error(`Failed to add user to organization: ${error.message}`);
+              console.error(`Failed to add user to organization: ${error.message}`);
             }
 
-      - name: Handle invalid access code
-        if: steps.validate.outputs.valid == 'false'
+      - name: Complete onboarding process
+        if: always() && !contains(steps.*.outcome, 'cancelled')
         uses: actions/github-script@v7
         with:
           script: |
-            // Comment on issue
+            // Comment on issue with generic message
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `❌ The provided access code is invalid. Please check with your Coveros contact for the correct access code.`
+              body: `Thank you for your onboarding request. Your submission has been processed.\n\nIf your request was approved, you will receive an organization invitation email shortly. Please check your email associated with your GitHub account.`
             });
 
-            // Add failure label
+            // Close issue
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            });
+
+            // Add completion label
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              labels: ['invalid-access-code']
+              labels: ['onboarding-complete']
             });
 
-      - name: Handle rate limit or validation failure
-        if: failure()
+      - name: Handle rate limit failure
+        if: failure() && steps.rate_limit.outcome == 'failure'
         uses: actions/github-script@v7
         with:
           script: |
@@ -137,12 +142,19 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `❌ Your onboarding request could not be processed.\n\nPossible reasons:\n- Too many attempts (max 5 per 24 hours)\n- GitHub account is less than 7 days old\n- System error\n\nPlease contact your Coveros representative if you believe this is an error.`
+              body: `Your onboarding request could not be processed due to too many attempts. Please try again later or contact your Coveros representative.`
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
             });
 
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              labels: ['onboarding-failed']
+              labels: ['onboarding-complete']
             });
