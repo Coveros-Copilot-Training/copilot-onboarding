@@ -15,7 +15,7 @@ jobs:
 
       - name: Parse issue form data
         id: parse
-        uses: peter-murray/issue-forms-body-parser@v4.0.0
+        uses: peter-murray/issue-forms-body-parser@v4.2.1
         with:
           issue_id: ${{ github.event.issue.number }}
           generate_summary: true
