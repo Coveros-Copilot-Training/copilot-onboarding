@@ -4,6 +4,8 @@ on:
   issues:
     types: [opened, edited]
 
+permissions: write-all
+
 jobs:
   validate-and-onboard:
     runs-on: ubuntu-latest
