@@ -1,7 +1,7 @@
 name: Coveros Copilot Onboarding
 description: Fill out this form to request access to the Organization and to be assigned a Copilot License
 title: Onboarding Request
-labels: ["Onboarding"]
+labels: ["onboarding"]
 body:
   - type: input
     id: access_code
