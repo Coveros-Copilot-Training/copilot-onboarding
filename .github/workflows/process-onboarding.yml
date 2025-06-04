@@ -67,7 +67,7 @@ jobs:
         id: validate
         env:
           ACCESS_CODE: ${{ secrets.ONBOARDING_ACCESS_CODE }}
-          SUBMITTED_CODE: ${{ fromJSON(steps.parse.outputs.payload).access_code }}
+          SUBMITTED_CODE: ${{ steps.parse.outputs.payload.access_code }}
         run: |
           echo "Submitted code: $SUBMITTED_CODE"
           if [ "$ACCESS_CODE" != "$SUBMITTED_CODE" ]; then
