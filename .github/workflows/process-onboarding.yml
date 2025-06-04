@@ -1,0 +1,148 @@
+name: Process Onboarding Request
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  validate-and-onboard:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'onboarding')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Parse issue form data
+        id: parse
+        uses: peter-murray/issue-forms-body-parser@v3
+        with:
+          issue_id: ${{ github.event.issue.number }}
+
+      - name: Rate limit check
+        id: rate_limit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const creator = context.payload.issue.user.login;
+            const recentIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              creator: creator,
+              state: 'all',
+              since: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+              labels: 'Onboarding'
+            });
+            // Allow max 5 attempts per 24 hours
+            if (recentIssues.data.length > 5) {
+              throw new Error('Rate limit exceeded. Too many onboarding attempts.');
+            }
+
+            # In the future we will want to include this section, but due to the sort time we can't.
+            # // Check account age (must be at least 7 days old)
+            # const userInfo = await github.rest.users.getByUsername({
+            #   username: creator
+            # });
+            # const accountAge = Date.now() - new Date(userInfo.data.created_at).getTime();
+            # const sevenDays = 7 * 24 * 60 * 60 * 1000;
+            # if (accountAge < sevenDays) {
+            #   throw new Error('Account must be at least 7 days old to request onboarding.');
+            # }
+
+            return true;
+
+      - name: Validate access code
+        id: validate
+        env:
+          ACCESS_CODE: ${{ secrets.ONBOARDING_ACCESS_CODE }}
+          SUBMITTED_CODE: ${{ fromJSON(steps.parse.outputs.payload).access_code }}
+        run: |
+          if [ "$ACCESS_CODE" != "$SUBMITTED_CODE" ]; then
+            echo "valid=false" >> $GITHUB_OUTPUT
+            echo "Invalid access code provided"
+          else
+            echo "valid=true" >> $GITHUB_OUTPUT
+            echo "Access code validated"
+          fi
+
+      - name: Add user to organization
+        if: steps.validate.outputs.valid == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ORG_ADMIN_TOKEN }}
+          script: |
+            try {
+              // Add user to organization
+              await github.rest.orgs.addOrUpdateMembership({
+                org: context.repo.owner,
+                username: context.payload.issue.user.login,
+                role: 'member'
+              });
+              
+              // Comment on issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `✅ @${context.payload.issue.user.login} has been successfully added to the organization!\n\nYou should receive an invitation email shortly. Please accept it to complete the onboarding process.`
+              });
+              
+              // Close issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                state: 'closed'
+              });
+              
+              // Add success label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['onboarding-complete']
+              });
+              
+            } catch (error) {
+              throw new Error(`Failed to add user to organization: ${error.message}`);
+            }
+
+      - name: Handle invalid access code
+        if: steps.validate.outputs.valid == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Comment on issue
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ The provided access code is invalid. Please check with your Coveros contact for the correct access code.`
+            });
+
+            // Add failure label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['invalid-access-code']
+            });
+
+      - name: Handle rate limit or validation failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ Your onboarding request could not be processed.\n\nPossible reasons:\n- Too many attempts (max 5 per 24 hours)\n- GitHub account is less than 7 days old\n- System error\n\nPlease contact your Coveros representative if you believe this is an error.`
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['onboarding-failed']
+            });
