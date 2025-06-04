@@ -20,8 +20,6 @@ jobs:
         uses: peter-murray/issue-forms-body-parser@v4.2.1
         with:
           issue_id: ${{ github.event.issue.number }}
-          label_marker_start: "[["
-          label_marker_end: "]]"
           generate_summary: true
 
       - name: Immediately redact access code from issue
@@ -37,7 +35,7 @@ jobs:
 
             // Redact the access code from the issue body
             let body = issue.data.body;
-            body = body.replace(/### AccessCode\n\n.*/gm, '### AccessCode\n\n[------]');
+            body = body.replace(/### >>AccessCode<<\n\n.*/gm, '### >>AccessCode<<\n\n[------]');
 
             // Update the issue to remove the access code
             await github.rest.issues.update({
