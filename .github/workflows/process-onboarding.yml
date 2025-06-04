@@ -37,7 +37,7 @@ jobs:
 
             // Redact the access code from the issue body
             let body = issue.data.body;
-            body = body.replace(/### Access Code\n\n.*/gm, '### Access Code\n\n[------]');
+            body = body.replace(/### AccessCode\n\n.*/gm, '### AccessCode\n\n[------]');
 
             // Update the issue to remove the access code
             await github.rest.issues.update({
@@ -72,7 +72,7 @@ jobs:
         id: validate
         env:
           ACCESS_CODE: ${{ secrets.ONBOARDING_ACCESS_CODE }}
-          SUBMITTED_CODE: ${{ steps.parse.outputs.payload.Access_Code }}
+          SUBMITTED_CODE: ${{ steps.parse.outputs.payload.AccessCode }}
           parsed_data: ${{ steps.parse.outputs.payload }}
         run: |
           echo "$parsed_data"
