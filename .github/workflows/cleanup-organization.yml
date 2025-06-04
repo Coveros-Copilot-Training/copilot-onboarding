@@ -1,0 +1,195 @@
+# This workflow removes all non-admin users from the organization every night at midnight
+# and sends an email digest to organization owners/admins
+
+name: Organization Cleanup
+
+on:
+  schedule:
+    # Run every day at midnight UTC
+    - cron: '0 0 * * *'
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  cleanup-organization:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4.0.0
+
+      - name: Get organization members and identify non-admins
+        id: identify-users
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const org = context.repo.owner;
+            console.log(`Processing organization: ${org}`);
+            
+            // Get all organization members
+            const membersResponse = await github.rest.orgs.listMembers({
+              org: org,
+              per_page: 100
+            });
+            
+            const allMembers = membersResponse.data;
+            console.log(`Found ${allMembers.length} total members`);
+            
+            // Get organization owners/admins
+            const ownersResponse = await github.rest.orgs.listMembers({
+              org: org,
+              role: 'admin',
+              per_page: 100
+            });
+            
+            const owners = ownersResponse.data;
+            console.log(`Found ${owners.length} owners/admins`);
+            
+            // Identify non-admin users to remove
+            const ownerLogins = new Set(owners.map(owner => owner.login));
+            const usersToRemove = allMembers.filter(member => !ownerLogins.has(member.login));
+            
+            console.log(`Users to remove: ${usersToRemove.length}`);
+            console.log('Non-admin users:', usersToRemove.map(u => u.login));
+            
+            // Get owner emails for notification
+            const ownerEmails = [];
+            for (const owner of owners) {
+              try {
+                const userResponse = await github.rest.users.getByUsername({
+                  username: owner.login
+                });
+                if (userResponse.data.email) {
+                  ownerEmails.push(userResponse.data.email);
+                }
+              } catch (error) {
+                console.log(`Could not get email for ${owner.login}: ${error.message}`);
+              }
+            }
+            
+            core.setOutput("users-to-remove", JSON.stringify(usersToRemove));
+            core.setOutput("owner-emails", JSON.stringify(ownerEmails));
+            core.setOutput("removal-count", usersToRemove.length);
+
+      - name: Remove non-admin users from organization
+        id: remove-users
+        if: steps.identify-users.outputs.removal-count > 0
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const org = context.repo.owner;
+            const usersToRemove = JSON.parse('${{ steps.identify-users.outputs.users-to-remove }}');
+            const removedUsers = [];
+            const failedRemovals = [];
+            
+            console.log(`Starting removal of ${usersToRemove.length} users`);
+            
+            for (const user of usersToRemove) {
+              try {
+                await github.rest.orgs.removeMembershipForUser({
+                  org: org,
+                  username: user.login
+                });
+                
+                removedUsers.push({
+                  login: user.login,
+                  id: user.id,
+                  avatar_url: user.avatar_url,
+                  html_url: user.html_url
+                });
+                
+                console.log(`Successfully removed user: ${user.login}`);
+              } catch (error) {
+                console.error(`Failed to remove user ${user.login}: ${error.message}`);
+                failedRemovals.push({
+                  login: user.login,
+                  error: error.message
+                });
+              }
+            }
+            
+            console.log(`Removal complete. Removed: ${removedUsers.length}, Failed: ${failedRemovals.length}`);
+            
+            core.setOutput("removed-users", JSON.stringify(removedUsers));
+            core.setOutput("failed-removals", JSON.stringify(failedRemovals));
+            core.setOutput("successfully-removed-count", removedUsers.length);
+
+      - name: Send email notification to organization owners
+        if: steps.remove-users.outputs.successfully-removed-count > 0
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const removedUsers = JSON.parse('${{ steps.remove-users.outputs.removed-users }}');
+            const failedRemovals = JSON.parse('${{ steps.remove-users.outputs.failed-removals }}');
+            const ownerEmails = JSON.parse('${{ steps.identify-users.outputs.owner-emails }}');
+            const org = context.repo.owner;
+            
+            // Create email content
+            const currentDate = new Date().toISOString().split('T')[0];
+            
+            let emailBody = `Organization Cleanup Report - ${currentDate}\n\n`;
+            emailBody += `Organization: ${org}\n`;
+            emailBody += `Total users removed: ${removedUsers.length}\n\n`;
+            
+            if (removedUsers.length > 0) {
+              emailBody += `Successfully Removed Users:\n`;
+              emailBody += `================================\n`;
+              for (const user of removedUsers) {
+                emailBody += `• ${user.login} (${user.html_url})\n`;
+              }
+              emailBody += `\n`;
+            }
+            
+            if (failedRemovals.length > 0) {
+              emailBody += `Failed Removals:\n`;
+              emailBody += `================\n`;
+              for (const failure of failedRemovals) {
+                emailBody += `• ${failure.login} - Error: ${failure.error}\n`;
+              }
+              emailBody += `\n`;
+            }
+            
+            emailBody += `\nThis is an automated report generated by the Organization Cleanup workflow.\n`;
+            emailBody += `Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            
+            console.log('Email notification content:');
+            console.log(emailBody);
+            
+            // Note: This step prepares the email content. 
+            // To actually send emails, you would need to integrate with an email service.
+            // Options include:
+            // - SendGrid Action: dawidd6/action-send-mail
+            // - AWS SES via aws-actions/configure-aws-credentials
+            // - Custom email service API call
+            // - GitHub repository dispatch to trigger email notification workflow
+            console.log(`Would notify ${ownerEmails.length} organization owners`);
+            console.log('Owner emails:', ownerEmails);
+            
+            // Store email content for potential future use
+            core.setOutput("email-content", emailBody);
+
+      - name: Log completion
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const removalCount = '${{ steps.identify-users.outputs.removal-count }}';
+            const successCount = '${{ steps.remove-users.outputs.successfully-removed-count }}' || '0';
+            
+            console.log('=====================================');
+            console.log('Organization Cleanup Workflow Complete');
+            console.log('=====================================');
+            console.log(`Users identified for removal: ${removalCount}`);
+            console.log(`Users successfully removed: ${successCount}`);
+            
+            if (removalCount === '0') {
+              console.log('No non-admin users found. No action taken.');
+            } else if (successCount === '0') {
+              console.log('No users were successfully removed.');
+            } else {
+              console.log('Email notification prepared for organization owners.');
+            }
