@@ -20,7 +20,6 @@ jobs:
         uses: peter-murray/issue-forms-body-parser@v4.2.1
         with:
           issue_id: ${{ github.event.issue.number }}
-          generate_summary: true
 
       - name: Immediately redact access code from issue
         uses: actions/github-script@v7
@@ -89,7 +88,7 @@ jobs:
               // Add user to organization
               await github.rest.orgs.createInvitation({
                 org: context.repo.owner,
-                invitee_id: context.payload.issue.user.login,
+                email: context.payload.issue.user.email,
                 role: 'direct_member'
               });
               
