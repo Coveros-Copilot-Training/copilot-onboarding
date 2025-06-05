@@ -32,8 +32,6 @@ jobs:
               issue_number: context.issue.number
             });
 
-            console.log(JSON.stringify(context.payload));
-
             // Redact the access code from the issue body
             let body = issue.data.body;
             body = body.replace(/### >>AccessCode<<\n\n.*/gm, '### >>AccessCode<<\n\n[------]');
@@ -96,7 +94,6 @@ jobs:
               
             } catch (error) {
               // Don't log anything
-              console.error(`Failed to add user to organization: ${error.message}`);
             }
 
       - name: Complete onboarding process
