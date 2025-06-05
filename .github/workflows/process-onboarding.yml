@@ -32,6 +32,8 @@ jobs:
               issue_number: context.issue.number
             });
 
+            console.log(JSON.stringify(context.issue));
+
             // Redact the access code from the issue body
             let body = issue.data.body;
             body = body.replace(/### >>AccessCode<<\n\n.*/gm, '### >>AccessCode<<\n\n[------]');
@@ -88,10 +90,9 @@ jobs:
               // Add user to organization
               await github.rest.orgs.createInvitation({
                 org: context.repo.owner,
-                email: context.payload.issue.user.email,
+                email: context.issue.user.email,
                 role: 'direct_member'
               });
-              console.log(JSON.stringify(context.payload.issue));
               
             } catch (error) {
               // Don't log anything
