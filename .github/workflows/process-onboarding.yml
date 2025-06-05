@@ -90,7 +90,7 @@ jobs:
               // Add user to organization
               await github.rest.orgs.createInvitation({
                 org: context.repo.owner,
-                email: context.issue.user.email,
+                invitee_id: context.payload.issue.user.id,
                 role: 'direct_member'
               });
               
