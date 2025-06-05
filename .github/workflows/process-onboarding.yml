@@ -32,7 +32,7 @@ jobs:
               issue_number: context.issue.number
             });
 
-            console.log(JSON.stringify(context.issue));
+            console.log(JSON.stringify(context.payload));
 
             // Redact the access code from the issue body
             let body = issue.data.body;
