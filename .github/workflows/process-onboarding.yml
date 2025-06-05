@@ -91,6 +91,7 @@ jobs:
                 email: context.payload.issue.user.email,
                 role: 'direct_member'
               });
+              console.log(JSON.stringify(context.payload.issue));
               
             } catch (error) {
               // Don't log anything
