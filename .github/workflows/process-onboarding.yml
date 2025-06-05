@@ -71,16 +71,12 @@ jobs:
         env:
           ACCESS_CODE: ${{ secrets.ONBOARDING_ACCESS_CODE }}
           SUBMITTED_CODE: ${{ fromJson(steps.parse.outputs.payload).AccessCode }}
-          parsed_data: ${{ steps.parse.outputs.payload }}
         run: |
-          echo "$parsed_data"
           echo "Submitted code: $SUBMITTED_CODE"
           if [ "$ACCESS_CODE" != "$SUBMITTED_CODE" ]; then
             echo "valid=false" >> $GITHUB_OUTPUT
-            echo "Access code is invalid"
           else
             echo "valid=true" >> $GITHUB_OUTPUT
-            echo "Access code is valid"
           fi
 
       - name: Add user to organization
@@ -91,10 +87,10 @@ jobs:
           script: |
             try {
               // Add user to organization
-              await github.rest.orgs.addOrUpdateMembership({
+              await github.rest.orgs.createInvitation({
                 org: context.repo.owner,
-                username: context.payload.issue.user.login,
-                role: 'member'
+                invitee_id: context.payload.issue.user.login,
+                role: 'direct_member'
               });
               
             } catch (error) {
