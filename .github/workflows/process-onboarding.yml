@@ -95,6 +95,7 @@ jobs:
               
             } catch (error) {
               // Don't log anything
+              console.error(`Failed to add user to organization: ${error.message}`);
             }
 
       - name: Complete onboarding process
