@@ -70,7 +70,7 @@ jobs:
         id: validate
         env:
           ACCESS_CODE: ${{ secrets.ONBOARDING_ACCESS_CODE }}
-          SUBMITTED_CODE: ${{ steps.parse.outputs.payload.AccessCode }}
+          SUBMITTED_CODE: ${{ fromJson(steps.parse.outputs.payload.AccessCode) }}
           parsed_data: ${{ steps.parse.outputs.payload }}
         run: |
           echo "$parsed_data"
